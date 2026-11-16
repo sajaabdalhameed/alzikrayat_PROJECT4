@@ -4,3 +4,4 @@ server/uploads/*
 !server/uploads/.gitkeep
 dist
 *.code-workspace
+*.code-workspace
