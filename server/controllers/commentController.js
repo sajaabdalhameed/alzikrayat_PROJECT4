@@ -9,11 +9,6 @@ exports.create = async (req, res, next) => {
     }
     const created = await Comment.create({ photoId: req.params.id, userId: req.userId, comment: req.body.comment });
     const comment = await created.populate('userId', 'firstName lastName');
-    
-    // NEW: إرسال الكومنت الجديد فوراً لكل المتصلين
-    const io = req.app.get('io');
-    io.emit('newComment', comment); 
-
     res.status(201).json(comment);
   } catch (err) { next(err); }
-}; 
+};
