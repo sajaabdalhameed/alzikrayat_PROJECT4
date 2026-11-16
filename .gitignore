@@ -5,3 +5,4 @@ server/uploads/*
 dist
 *.code-workspace
 *.code-workspace
+*.code-workspace
