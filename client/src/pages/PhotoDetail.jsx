@@ -1,69 +1,41 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { io } from 'socket.io-client';
 import { api, imgUrl } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import { Loading, ErrorMsg } from '../components/Status.jsx';
 
-// Connect to the Socket.io server for real-time comments
-const socket = io('http://localhost:5000');
-
+// Photo detail page: image, owner actions, comments, and the Track F AI summary
 export default function PhotoDetail() {
   const { id } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
-  
+
   const [photo, setPhoto] = useState(null);
   const [comments, setComments] = useState([]);
   const [text, setText] = useState('');
   const [error, setError] = useState('');
   const [posting, setPosting] = useState(false);
-  const [likes, setLikes] = useState([]);
-  const [isLiking, setIsLiking] = useState(false);
 
-  // Fetch photo data and set up socket listener
+  // Track F: AI summary state
+  const [aiSummary, setAiSummary] = useState('');
+  const [aiSource, setAiSource] = useState('');       // 'openai', 'demo' or 'fallback'
+  const [isSummarizing, setIsSummarizing] = useState(false);
+
+  // Fetch photo data and its comments
   useEffect(() => {
     api(`/photos/${id}`)
-      .then((d) => { 
-        setPhoto(d.photo); 
-        setComments(d.comments); 
-        setLikes(d.photo.likes || []);
-      })
+      .then((d) => { setPhoto(d.photo); setComments(d.comments); })
       .catch((e) => setError(e.message));
-
-    // Listen for new comments from other users
-    socket.on('newComment', (newComment) => {
-      if (newComment.photoId === id) {
-        setComments((prev) =>
-          prev.some((c) => c._id === newComment._id) ? prev : [...prev, newComment]
-        );
-      }
-    });
-
-    // Cleanup listener when component unmounts
-    return () => socket.off('newComment');
   }, [id]);
 
+  // Owner-only delete (the server also checks ownership and returns 403 otherwise)
   const handleDelete = async () => {
     if (!confirm('Delete this photo?')) return;
-    try { 
-      await api(`/photos/${id}`, { method: 'DELETE' }); 
-      navigate('/photos'); 
-    } catch (e) { 
-      setError(e.message); 
-    }
-  };
-
-  const handleLike = async () => {
-    if (!user) return alert('Please login to like.');
-    setIsLiking(true);
     try {
-      const data = await api(`/photos/${id}/like`, { method: 'PUT' });
-      setLikes(data.likes);
-    } catch (err) { 
-      console.error(err); 
-    } finally { 
-      setIsLiking(false); 
+      await api(`/photos/${id}`, { method: 'DELETE' });
+      navigate('/photos');
+    } catch (e) {
+      setError(e.message);
     }
   };
 
@@ -73,22 +45,36 @@ export default function PhotoDetail() {
     setPosting(true); setError('');
     try {
       const created = await api(`/photos/${id}/comments`, { method: 'POST', body: { comment: text } });
-      // Show the new comment immediately from the API response (skip if the socket already added it)
-      setComments((prev) =>
-        prev.some((c) => c._id === created._id) ? prev : [...prev, created]
-      );
+      // Append the new comment locally so it appears without reloading the page
+      setComments((prev) => [...prev, created]);
       setText('');
-    } catch (err) { 
-      setError(err.message); 
-    } finally { 
-      setPosting(false); 
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  // Track F: request an AI summary of the comments from the server
+  // (the browser never talks to OpenAI directly; the API key stays on the server)
+  const handleSummarize = async () => {
+    setIsSummarizing(true);
+    setError(''); // Clear previous errors
+    try {
+      const result = await api(`/photos/${id}/summarize`, { method: 'POST' });
+      setAiSummary(result.summary);
+      setAiSource(result.source);
+    } catch (err) {
+      // Includes the friendly rate-limit message when the server returns 429
+      setError(err.message);
+    } finally {
+      setIsSummarizing(false);
     }
   };
 
   if (!photo) return error ? <ErrorMsg message={error} /> : <Loading />;
-  
+
   const isOwner = user && user._id === photo.userId._id;
-  const hasLiked = user && likes.includes(user._id);
 
   return (
     <div className="row">
@@ -104,40 +90,72 @@ export default function PhotoDetail() {
           By {photo.userId.firstName} {photo.userId.lastName} on {new Date(photo.dateTime).toLocaleString()}
         </p>
         <p style={{ whiteSpace: 'pre-line' }}>{photo.description}</p>
-        
+
         {/* Action Buttons */}
         <div className="d-flex flex-wrap gap-2 mb-3">
+          {/* Only the owner sees the delete button */}
           {isOwner && <button className="btn btn-danger btn-sm" onClick={handleDelete}>Delete Photo</button>}
-          
-          <button onClick={handleLike} disabled={isLiking} className={`btn btn-sm ${hasLiked ? 'btn-danger' : 'btn-outline-danger'}`}>
-            {hasLiked ? '❤️ Liked' : '🤍 Like'} ({likes.length})
-          </button>
 
-          <button 
+          <button
             onClick={() => {
               navigator.clipboard.writeText(window.location.href);
               alert('Link copied to clipboard!');
-            }} 
+            }}
             className="btn btn-sm btn-outline-secondary"
           >
-            🔗 Copy Link
+             Copy Link
           </button>
 
-          <a 
-            href={imgUrl(photo.fileName)} 
-            download={`${photo.title}.jpg`} 
+          <a
+            href={imgUrl(photo.fileName)}
+            download={`${photo.title}.jpg`}
             className="btn btn-sm btn-outline-success"
           >
-            ⬇️ Download
+             Download
           </a>
         </div>
 
         <hr />
-        
+
         {/* Comments Section */}
-        <h5>Comments <span className="text-success fs-6">(Live 🔴)</span></h5>
+        <h5>Comments</h5>
         <ErrorMsg message={error} />
-        
+
+        {/* Track F: AI Insights panel (placed above the comments) */}
+        <div className="card mb-4 shadow-sm border-info">
+          <div className="card-body bg-light">
+            <div className="d-flex justify-content-between align-items-center mb-2">
+              <h6 className="card-title text-info mb-0">
+                <span className="me-2">🤖</span> AI Insights
+              </h6>
+              {/* Disabled for guests, while loading, and when there is nothing to summarize */}
+              <button
+                onClick={handleSummarize}
+                disabled={!user || isSummarizing || comments.length === 0}
+                className="btn btn-sm btn-outline-info fw-bold"
+              >
+                {isSummarizing ? 'Analyzing...' : 'Summarize Comments'}
+              </button>
+            </div>
+
+            {/* Panel content depends on the state: guest, no comments, summary ready, or idle */}
+            {!user ? (
+              <small className="text-muted">Login to use AI summarization.</small>
+            ) : comments.length === 0 ? (
+              <small className="text-muted">Add some comments to enable AI summarization.</small>
+            ) : aiSummary ? (
+              <div className="alert alert-info mb-0 py-2" role="alert">
+                <strong>Summary: </strong> {aiSummary}
+                {/* Graceful degradation: tell the user when the local fallback was used instead of OpenAI */}
+                {aiSource && aiSource !== 'openai' && <small className="d-block text-muted">(demo mode: AI service not used)</small>}
+              </div>
+            ) : (
+              <small className="text-muted">Click the button to generate a smart summary of this discussion.</small>
+            )}
+          </div>
+        </div>
+
+        {/* Scrollable comment list */}
         <div className="mb-3" style={{ maxHeight: 250, overflowY: 'auto' }}>
           {comments.length === 0
             ? <p className="text-muted">No comments yet.</p>
@@ -148,15 +166,15 @@ export default function PhotoDetail() {
               ))}
         </div>
 
-        {/* Add Comment Form */}
+        {/* Add Comment Form (logged-in users only) */}
         {user ? (
           <form onSubmit={handleComment}>
-            <textarea 
-              className="form-control mb-2" 
-              rows="2" 
+            <textarea
+              className="form-control mb-2"
+              rows="2"
               placeholder="Add a comment..."
-              value={text} 
-              onChange={(e) => setText(e.target.value)} 
+              value={text}
+              onChange={(e) => setText(e.target.value)}
             />
             <button className="btn btn-primary btn-sm" disabled={posting}>
               {posting ? 'Posting...' : 'Post Comment'}
@@ -168,4 +186,4 @@ export default function PhotoDetail() {
       </div>
     </div>
   );
-} 
+}
