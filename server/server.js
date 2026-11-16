@@ -1,7 +1,7 @@
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '8.8.4.4']); // helps when the local DNS cannot resolve mongodb+srv:// addresses
 require('dotenv').config();
 const express = require('express');
-const http = require('http'); // ضيفنا دي
-const { Server } = require('socket.io'); // ضيفنا دي
 const cors = require('cors');
 const path = require('path');
 const mongoose = require('mongoose');
@@ -10,10 +10,6 @@ const Photo = require('./models/Photo');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
-const server = http.createServer(app); // غيرنا app.listen لـ server.listen تحت
-const io = new Server(server, { cors: { origin: '*' } }); // إعداد الـ Socket
-
-app.set('io', io); // عشان نقدر نوصل للـ io من جوه الـ Controllers
 
 app.use(cors());
 app.use(express.json());
@@ -30,6 +26,21 @@ app.get('/api/stats', async (req, res, next) => {
 app.use((req, res) => res.status(404).json({ message: 'Route not found' }));
 app.use(errorHandler);
 
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => server.listen(process.env.PORT || 5000, () => console.log(`Server running on port ${process.env.PORT || 5000}`)))
-  .catch((err) => { console.error('DB connection failed:', err.message); process.exit(1); }); 
+const port = process.env.PORT || 5000;
+
+if (!process.env.MONGODB_URI || !process.env.JWT_SECRET) {
+  console.error('Missing MONGODB_URI or JWT_SECRET in server/.env');
+  process.exit(1);
+}
+
+// Fail fast (10 s) with a readable message instead of hanging for minutes.
+mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 10000, family: 4 })
+  .then(() => {
+    console.log('Connected to MongoDB');
+    app.listen(port, () => console.log(`Server running on port ${port}`));
+  })
+  .catch((err) => {
+    console.error('DB connection failed:', err.message);
+    console.error('Check: 1) MONGODB_URI is correct  2) Atlas > Network Access allows your IP  3) your internet connection');
+    process.exit(1);
+  });
