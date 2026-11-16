@@ -1,53 +1,23 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, imgUrl } from '../api.js';
-import { useAuth } from '../AuthContext.jsx';
+import { imgUrl } from '../api.js';
 
+// Displays one photo as a card. `view` is 'grid' (default) or 'list', chosen in Gallery.
 export default function PhotoCard({ photo, view }) {
-  const { user } = useAuth();
   const isList = view === 'list';
-  
-  // Initialize state with the likes from the photo object
-  const [likes, setLikes] = useState(photo.likes || []);
-  const [isLiking, setIsLiking] = useState(false);
-
-  const handleLike = async (e) => {
-    e.preventDefault(); // Prevent navigating to details when clicking the like button
-    if (!user) return alert('Please login to like photos.');
-    
-    setIsLiking(true);
-    try {
-      const data = await api(`/photos/${photo._id}/like`, { method: 'PUT' });
-      setLikes(data.likes); // Update state with the new array from backend
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLiking(false);
-    }
-  };
-
-  const hasLiked = user && likes.includes(user._id);
 
   return (
+    // Full-width row in list view, three cards per row (col-md-4) in grid view
     <div className={isList ? 'col-12 mb-3' : 'col-md-4 mb-4'}>
       <div className={'card h-100 gallery-card' + (isList ? ' flex-row' : '')}>
         <img src={imgUrl(photo.fileName)} alt={photo.title}
           className={isList ? 'gallery-thumb-list' : 'gallery-thumb'} />
         <div className="card-body d-flex flex-column">
           <h5 className="card-title">{photo.title}</h5>
+          {/* photo.userId is populated by the server with the owner's first and last name */}
           <p className="card-text text-muted mb-2">By {photo.userId.firstName} {photo.userId.lastName}</p>
-          
-          <div className="mt-auto d-flex justify-content-between align-items-center">
+          {/* mt-auto pushes the button to the bottom so all cards line up */}
+          <div className="mt-auto">
             <Link to={`/photos/${photo._id}`} className="btn btn-outline-primary btn-sm">View Details</Link>
-            
-            {/* Like Button */}
-            <button 
-              onClick={handleLike} 
-              disabled={isLiking}
-              className={`btn btn-sm ${hasLiked ? 'btn-danger' : 'btn-outline-danger'}`}
-            >
-              {hasLiked ? '❤️' : '🤍'} {likes.length}
-            </button>
           </div>
         </div>
       </div>
