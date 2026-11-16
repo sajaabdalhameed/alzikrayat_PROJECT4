@@ -4,12 +4,14 @@ import { api, imgUrl } from '../api.js';
 import { useAuth } from '../AuthContext.jsx';
 import { Loading, ErrorMsg } from '../components/Status.jsx';
 
+// Landing page: hero section, site statistics, recent photos and an About section
 export default function Home() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);
   const [error, setError] = useState('');
 
+  // Load the member/photo counts and the 6 newest photos in parallel when the page opens
   useEffect(() => {
     Promise.all([api('/stats'), api('/photos?limit=6')])
       .then(([s, r]) => { setStats(s); setRecent(r); })
@@ -18,6 +20,7 @@ export default function Home() {
 
   return (
     <>
+      {/* Hero section */}
       <div className="p-5 mb-4 bg-dark text-white rounded-3 text-center">
         <div className="container-fluid py-4">
           <h1 className="display-5 fw-bold">Welcome to Alzikrayat</h1>
@@ -26,6 +29,7 @@ export default function Home() {
             share the story behind each one, and read what other members have to say about them.
           </p>
           <Link to="/photos" className="btn btn-primary btn-lg me-2">Browse the Gallery</Link>
+          {/* The second button depends on the logged-in state */}
           {user
             ? <Link to="/photos/new" className="btn btn-outline-light btn-lg">Upload a Photo</Link>
             : <Link to="/login" className="btn btn-outline-light btn-lg">Join Now</Link>}
@@ -34,6 +38,8 @@ export default function Home() {
 
       <ErrorMsg message={error} />
       {!stats && !error && <Loading />}
+
+      {/* Statistics cards (data comes from GET /api/stats) */}
       {stats && (
         <div className="row text-center mb-5">
           {[['Registered Members', stats.userCount], ['Photos Shared', stats.photoCount]].map(([label, n]) => (
@@ -47,6 +53,7 @@ export default function Home() {
         </div>
       )}
 
+      {/* Recently shared photos: small clickable thumbnails linking to the detail page */}
       {recent.length > 0 && (
         <>
           <h3 className="mb-3">Recently Shared</h3>
@@ -63,6 +70,7 @@ export default function Home() {
         </>
       )}
 
+      {/* About section */}
       <section id="about-us" className="mb-5">
         <h3 className="mb-3">About Us</h3>
         <p>
